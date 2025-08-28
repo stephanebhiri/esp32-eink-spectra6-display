@@ -17,6 +17,7 @@
 
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiManager.h>
 #include "esp_wifi.h"
 #include "esp_sleep.h"
 #include "esp_task_wdt.h"
@@ -114,6 +115,76 @@ int getBatteryLevel() {
   Serial.printf("Battery: %.2fV (%d%%)\n", voltage, (int)percentage);
   return (int)percentage;
 }
+
+/**
+ * Detect double reset for configuration mode
+ * Two resets within 3 seconds triggers config portal
+ */
+bool detectDoubleReset() {
+  preferences.begin("boot", false);
+  uint32_t resetCount = preferences.getUInt("resetCount", 0);
+  uint32_t lastReset = preferences.getUInt("lastReset", 0);
+  uint32_t now = millis();
+  
+  // If booted within 3 seconds of last reset, it's a double reset
+  if (now < 3000 && lastReset < 3000) {
+    preferences.putUInt("resetCount", 0);  // Clear counter
+    preferences.putUInt("lastReset", 0);
+    preferences.end();
+    return true;
+  }
+  
+  // Record this reset
+  preferences.putUInt("lastReset", now);
+  preferences.end();
+  return false;
+}
+
+/**
+ * Custom minimal HTML for WiFi configuration portal
+ * Ultra-light design optimized for e-ink aesthetic
+ */
+const char* customPortalHTML = R"(
+<!DOCTYPE html>
+<html>
+<head>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>E-Ink Display Setup</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:16px/1.6 -apple-system,system-ui,sans-serif;background:#fff;padding:20px}
+h1{font-size:24px;font-weight:300;letter-spacing:-1px;margin-bottom:30px;padding-bottom:10px;border-bottom:1px solid #000}
+.m{max-width:400px;margin:0 auto}
+.f{margin-bottom:20px}
+label{display:block;margin-bottom:5px;font-size:12px;text-transform:uppercase;letter-spacing:1px}
+input{width:100%;padding:12px;border:1px solid #000;font-size:16px;transition:all .2s}
+input:focus{outline:none;border-width:2px;padding:11px}
+button{width:100%;padding:15px;background:#000;color:#fff;border:none;font-size:14px;text-transform:uppercase;letter-spacing:2px;cursor:pointer;transition:all .2s}
+button:hover{background:#333}
+.i{text-align:center;margin:30px 0;font-size:14px;color:#666}
+.s{padding:10px;background:#f0f0f0;border-left:3px solid #000;margin:20px 0;font-size:14px}
+</style>
+</head>
+<body>
+<div class='m'>
+<h1>⬛ E-Ink Display</h1>
+<div class='i'>Configure your WiFi network</div>
+<form action='/wifisave' method='post'>
+<div class='f'>
+<label>Network Name</label>
+<input name='s' placeholder='Your WiFi SSID' required>
+</div>
+<div class='f'>
+<label>Password</label>
+<input type='password' name='p' placeholder='Your WiFi password' required>
+</div>
+<button type='submit'>Connect →</button>
+</form>
+<div class='s'>Double-tap reset button anytime to return here</div>
+</div>
+</body>
+</html>
+)";
 
 /**
  * Load WiFi credentials from flash memory
@@ -293,38 +364,87 @@ void setup() {
   // Configure server URL
   snprintf(server_url, sizeof(server_url), "http://%s:%d", VPS_HOST, VPS_PORT);
   
-  // Load WiFi settings
-  loadWiFiCredentials();
+  // Initialize WiFiManager
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(180);  // 3 minutes timeout
+  wm.setMinimumSignalQuality(20);  // Filter weak networks
+  wm.setAPCallback([](WiFiManager *myWiFiManager) {
+    Serial.println("Entered config mode");
+    Serial.printf("Connect to WiFi network: %s\n", myWiFiManager->getConfigPortalSSID().c_str());
+    Serial.println("Then open http://192.168.4.1");
+  });
   
-  // Connect to WiFi
-  WiFi.mode(WIFI_STA);
+  // Check for double reset
+  bool forceConfig = detectDoubleReset();
   
-  if (wifi_configured && stored_ssid.length() > 0) {
-    Serial.println("Connecting with saved credentials: " + stored_ssid);
-    WiFi.begin(stored_ssid.c_str(), stored_password.c_str());
-  } else {
-    Serial.printf("Connecting to: %s\n", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-  }
-  
-  unsigned long start_time = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start_time < 10000) {
-    delay(300);
-    Serial.print(".");
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\nWiFi connected: %s\n", WiFi.localIP().toString().c_str());
-    wifi_configured = true;
+  if (forceConfig) {
+    Serial.println("Double reset detected! Starting config portal...");
     
-    // Enable power saving
-    esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
-    Serial.println("WiFi power saving enabled");
+    // Show config instructions on e-ink display
+    EPD_13IN3E_PowerOn();
+    EPD_13IN3E_Init();
+    // Special config mode: battery_pct = -2 triggers config display
+    EPD_13IN3E_ShowBootSplash("E-Ink-Setup", 0, -2);  // -2 = Config mode
+    EPD_13IN3E_PowerOff();
+    
+    // Disable watchdog during config portal (blocking operation)
+    esp_task_wdt_delete(NULL);
+    
+    // Start config portal with custom HTML
+    wm.setCustomHeadElement("<style>body{background:#fff}</style>");
+    if (!wm.startConfigPortal("E-Ink-Setup")) {
+      Serial.println("Failed to connect or timeout");
+      ESP.restart();
+    }
+    
+    // Re-enable watchdog after config
+    esp_task_wdt_add(NULL);
   } else {
-    Serial.println("\nWiFi connection failed");
-    Serial.println("Check WiFiConfig.h settings");
-    wifi_configured = false;
+    // Try auto-connect with saved credentials or fallback
+    WiFi.mode(WIFI_STA);
+    
+    // First try WiFiManager saved credentials
+    if (!wm.autoConnect("E-Ink-Setup")) {
+      // If that fails, try hardcoded credentials from WiFiConfig.h
+      Serial.printf("Trying fallback: %s\n", WIFI_SSID);
+      WiFi.begin(WIFI_SSID, WIFI_PASS);
+      
+      unsigned long start_time = millis();
+      while (WiFi.status() != WL_CONNECTED && millis() - start_time < 10000) {
+        delay(300);
+        Serial.print(".");
+      }
+      
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("\nAll connection attempts failed. Starting config portal...");
+        
+        // Show config mode on display
+        EPD_13IN3E_PowerOn();
+        EPD_13IN3E_Init();
+        EPD_13IN3E_ShowBootSplash("E-Ink-Setup", 0, -2);
+        EPD_13IN3E_PowerOff();
+        
+        // Disable watchdog during config
+        esp_task_wdt_delete(NULL);
+        
+        if (!wm.startConfigPortal("E-Ink-Setup")) {
+          Serial.println("Config portal timeout");
+          ESP.restart();
+        }
+        
+        // Re-enable watchdog
+        esp_task_wdt_add(NULL);
+      }
+    }
   }
+  
+  // At this point, we're connected
+  Serial.printf("\nWiFi connected: %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("Connected to: %s\n", WiFi.SSID().c_str());
+  
+  // Enable power saving
+  esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
+  Serial.println("WiFi power saving enabled");
 
   // Display boot screen
   EPD_13IN3E_PowerOn();

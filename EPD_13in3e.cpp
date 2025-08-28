@@ -291,7 +291,12 @@ void EPD_13IN3E_DisplayTextScreen(const char* ssid, uint16_t port, int battery_p
     char battery_line[64];
     char ssid_upper[32];
     
-    if (battery_pct < 0) {
+    // Special config mode display (battery_pct == -2)
+    if (battery_pct == -2) {
+        strcpy(battery_line, "CONFIG MODE");
+        snprintf(wifi_line, sizeof(wifi_line), "WIFI: %s", ssid);  // ssid = "E-Ink-Setup"
+        strcpy(ip_line, "OPEN BROWSER");
+    } else if (battery_pct < 0) {
         strcpy(battery_line, "USB POWER");
     } else {
         // Get voltage for display (re-read ADC quickly)
@@ -300,31 +305,44 @@ void EPD_13IN3E_DisplayTextScreen(const char* ssid, uint16_t port, int battery_p
         snprintf(battery_line, sizeof(battery_line), "BATTERY: %.1fV (%d%%)", voltage, battery_pct);
     }
     
-    if (WiFi.status() == WL_CONNECTED) {
-        snprintf(ip_line, sizeof(ip_line), "IP: %s PORT: %d", WiFi.localIP().toString().c_str(), port);
-        
-        // Convert SSID to uppercase
-        strncpy(ssid_upper, ssid, sizeof(ssid_upper) - 1);
-        ssid_upper[sizeof(ssid_upper) - 1] = '\0';
-        for (int i = 0; ssid_upper[i]; i++) {
-            ssid_upper[i] = toupper(ssid_upper[i]);
+    if (battery_pct != -2) {  // Normal mode (not config)
+        if (WiFi.status() == WL_CONNECTED) {
+            snprintf(ip_line, sizeof(ip_line), "IP: %s PORT: %d", WiFi.localIP().toString().c_str(), port);
+            
+            // Convert SSID to uppercase
+            strncpy(ssid_upper, ssid, sizeof(ssid_upper) - 1);
+            ssid_upper[sizeof(ssid_upper) - 1] = '\0';
+            for (int i = 0; ssid_upper[i]; i++) {
+                ssid_upper[i] = toupper(ssid_upper[i]);
+            }
+            snprintf(wifi_line, sizeof(wifi_line), "WIFI: %s", ssid_upper);
+        } else {
+            strcpy(ip_line, "NO WIFI CONNECTION");
+            strcpy(wifi_line, "OFFLINE MODE");
         }
-        snprintf(wifi_line, sizeof(wifi_line), "WIFI: %s", ssid_upper);
-    } else {
-        strcpy(ip_line, "NO WIFI CONNECTION");
-        strcpy(wifi_line, "OFFLINE MODE");
     }
     
     // MAX 30 CHARACTERS (1200px / 40px per char = 30 chars)
     // Each line below is <= 30 chars for perfect fit
-    const char* band_texts[] = {
-        "E-INK FRAME (C) 2025",                      // Band 0 (black) - 20 chars
-        ip_line,                                     // Band 1 (white) - Dynamic, ~25 chars
-        wifi_line,                                   // Band 2 (yellow) - Dynamic, ~15 chars
-        battery_line,                                // Band 3 (red) - Battery info, ~12 chars
-        "13.3 INCH COLOR DISPLAY",                   // Band 4 (blue) - 23 chars
-        "READY FOR YOUR IMAGES"                      // Band 5 (green) - 21 chars
-    };
+    const char* band_texts[6];
+    
+    if (battery_pct == -2) {
+        // Config mode display - 4 lines of text
+        band_texts[0] = battery_line;               // "CONFIG MODE"
+        band_texts[1] = wifi_line;                  // "WIFI: E-Ink-Setup"
+        band_texts[2] = ip_line;                    // "OPEN BROWSER"
+        band_texts[3] = "192.168.4.1";              // IP address
+        band_texts[4] = "TIMEOUT: 3 MINUTES";       // Info
+        band_texts[5] = "DOUBLE RESET TO RETRY";    // Help
+    } else {
+        // Normal mode display
+        band_texts[0] = "E-INK FRAME (C) 2025";     // Band 0 (black)
+        band_texts[1] = ip_line;                    // Band 1 (white)
+        band_texts[2] = wifi_line;                  // Band 2 (yellow)
+        band_texts[3] = battery_line;               // Band 3 (red)
+        band_texts[4] = "13.3 INCH COLOR DISPLAY";  // Band 4 (blue)
+        band_texts[5] = "READY FOR YOUR IMAGES";    // Band 5 (green)
+    }
     
     // Initialize the display (same as working code)
     EPD_13IN3E_Init();
