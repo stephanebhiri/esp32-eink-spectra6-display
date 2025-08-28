@@ -1,0 +1,24 @@
+/**
+ * WiFi Configuration Template
+ * 
+ * Copy this file to WiFiConfig.h and update with your network credentials.
+ * This file contains sensitive information and should not be committed to
+ * version control systems.
+ * 
+ * @author Stephane Bhiri
+ * @version 2.0
+ * @date January 2025
+ */
+
+#ifndef WIFI_CONFIG_H
+#define WIFI_CONFIG_H
+
+// WiFi Network Credentials
+const char* WIFI_SSID = "YourNetworkName";
+const char* WIFI_PASS = "YourNetworkPassword";
+
+// Image Server Configuration
+const char* VPS_HOST = "192.168.1.100";    // Your server IP address
+const uint16_t VPS_PORT = 5001;             // HTTP server port
+
+#endif
