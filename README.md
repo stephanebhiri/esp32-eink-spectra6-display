@@ -113,7 +113,19 @@ With a 2000mAh LiPo battery:
 
 ## API Integration Examples
 
-### Python Flask Server
+> **Note:** For a complete server implementation with image conversion and dithering, see [inkscreen-web-server](https://github.com/stephanebhiri/inkscreen-web-server)
+
+### Binary File Format for Dual-Controller Architecture
+The 13.3" display uses two SPI controllers (Master and Slave) to handle the 1200x1600 resolution:
+- **Master Controller**: Manages left half (pixels 0-599)
+- **Slave Controller**: Manages right half (pixels 600-1199)
+
+The `display_image.bin` file must be formatted as:
+- **Total size**: 960KB (480KB per controller)
+- **Structure**: Left half data (all 1600 rows) followed by right half data (all 1600 rows)
+- **Encoding**: 2 pixels per byte, 4 bits per pixel supporting 6 colors
+
+### Python Flask Server (Basic Example)
 ```python
 from flask import Flask, jsonify, send_file
 import hashlib
@@ -145,7 +157,7 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)
 ```
 
-### Node.js Express Server
+### Node.js Express Server (Basic Example)
 ```javascript
 const express = require('express');
 const fs = require('fs');
