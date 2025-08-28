@@ -122,21 +122,33 @@ int getBatteryLevel() {
  */
 bool detectDoubleReset() {
   preferences.begin("boot", false);
-  uint32_t resetCount = preferences.getUInt("resetCount", 0);
-  uint32_t lastReset = preferences.getUInt("lastReset", 0);
-  uint32_t now = millis();
+  uint32_t lastBootTime = preferences.getUInt("lastBoot", 0);
+  uint32_t bootCount = preferences.getUInt("bootCount", 0);
   
-  // If booted within 3 seconds of last reset, it's a double reset
-  if (now < 3000 && lastReset < 3000) {
-    preferences.putUInt("resetCount", 0);  // Clear counter
-    preferences.putUInt("lastReset", 0);
-    preferences.end();
-    return true;
+  // Get current boot time (roughly, using a magic number + millis)
+  uint32_t currentBootTime = esp_random() & 0xFFFF;  // Simple boot ID
+  
+  // If we have a recent boot record, increment counter
+  if (lastBootTime != 0) {
+    bootCount++;
+    if (bootCount >= 2) {
+      // Double reset detected, clear and return true
+      preferences.putUInt("bootCount", 0);
+      preferences.putUInt("lastBoot", 0);
+      preferences.end();
+      Serial.println("DEBUG: Double reset detected via counter");
+      return true;
+    }
+  } else {
+    bootCount = 1;  // First boot
   }
   
-  // Record this reset
-  preferences.putUInt("lastReset", now);
+  // Save current boot info
+  preferences.putUInt("lastBoot", currentBootTime);
+  preferences.putUInt("bootCount", bootCount);
   preferences.end();
+  
+  // Clear the counter after 10 seconds (done in main loop)
   return false;
 }
 
@@ -456,6 +468,14 @@ void setup() {
 
   Serial.printf("Monitoring server: %s\n", server_url);
   Serial.println("Checking for updates every 18 seconds");
+  
+  // Clear double reset counter after successful boot
+  delay(10000);  // Wait 10 seconds for user to potentially double reset
+  preferences.begin("boot", false);
+  preferences.putUInt("bootCount", 0);
+  preferences.putUInt("lastBoot", 0);
+  preferences.end();
+  Serial.println("Double reset window closed");
 }
 
 /**
