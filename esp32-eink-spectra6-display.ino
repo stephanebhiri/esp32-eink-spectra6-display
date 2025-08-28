@@ -228,7 +228,10 @@ bool updateDisplay() {
     }
     EPD_13IN3E_WriteLineM(line_buffer);
     master_bytes += bytes_read;
-    if ((y % 100) == 0) Serial.printf("Progress: %d%%\r", (y * 100) / EPD_HEIGHT);
+    if ((y % 100) == 0) {
+      Serial.printf("Progress: %d%%\r", (y * 100) / EPD_HEIGHT);
+      esp_task_wdt_reset();  // Reset watchdog during long download
+    }
   }
   EPD_13IN3E_EndFrameM();
   
@@ -243,6 +246,9 @@ bool updateDisplay() {
     }
     EPD_13IN3E_WriteLineS(line_buffer);
     slave_bytes += bytes_read;
+    if ((y % 100) == 0) {
+      esp_task_wdt_reset();  // Reset watchdog during long download  
+    }
   }
   EPD_13IN3E_EndFrameS();
   
