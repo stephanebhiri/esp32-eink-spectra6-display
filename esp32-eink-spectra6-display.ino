@@ -44,6 +44,10 @@ bool wifi_configured = false;
 String stored_ssid = "";
 String stored_password = "";
 
+// WiFiManager custom parameters (must be global for callback)
+WiFiManagerParameter* custom_server_host = nullptr;
+WiFiManagerParameter* custom_server_port = nullptr;
+
 /**
  * Robust JSON parser for extracting string values
  * Handles whitespace and escaped quotes properly
@@ -379,14 +383,14 @@ void setup() {
   // Initialize WiFiManager with custom parameters
   WiFiManager wm;
   
-  // Create custom parameters for server configuration
-  WiFiManagerParameter custom_server_host("server", "Server Host/IP", server_host, 47);
-  WiFiManagerParameter custom_server_port("port", "Server Port", server_port, 7);
+  // Create custom parameters for server configuration (use new to keep in heap)
+  custom_server_host = new WiFiManagerParameter("server", "Server Host/IP", server_host, 47);
+  custom_server_port = new WiFiManagerParameter("port", "Server Port", server_port, 7);
   WiFiManagerParameter custom_html("<p style='color:#666;font-size:12px;margin-top:20px;'>Configure your image server endpoint above</p>");
   
   // Add parameters to WiFiManager
-  wm.addParameter(&custom_server_host);
-  wm.addParameter(&custom_server_port);
+  wm.addParameter(custom_server_host);
+  wm.addParameter(custom_server_port);
   wm.addParameter(&custom_html);
   
   wm.setConfigPortalTimeout(180);  // 3 minutes timeout
@@ -397,12 +401,17 @@ void setup() {
     Serial.println("Then open http://192.168.4.1");
   });
   
-  // Callback to save custom parameters
-  wm.setSaveParamsCallback([&custom_server_host, &custom_server_port]() {
+  // Callback to save custom parameters (now using global pointers)
+  wm.setSaveParamsCallback([]() {
     Serial.println("Saving custom parameters");
-    strncpy(server_host, custom_server_host.getValue(), sizeof(server_host) - 1);
-    strncpy(server_port, custom_server_port.getValue(), sizeof(server_port) - 1);
-    saveConfiguration(server_host, server_port);
+    if (custom_server_host && custom_server_port) {
+      strncpy(server_host, custom_server_host->getValue(), sizeof(server_host) - 1);
+      server_host[sizeof(server_host) - 1] = '\0';
+      strncpy(server_port, custom_server_port->getValue(), sizeof(server_port) - 1);
+      server_port[sizeof(server_port) - 1] = '\0';
+      Serial.printf("New server config: %s:%s\n", server_host, server_port);
+      saveConfiguration(server_host, server_port);
+    }
   });
   
   // Check for double reset
@@ -489,6 +498,16 @@ void setup() {
   snprintf(server_url, sizeof(server_url), "http://%s:%s", server_host, server_port);
   Serial.printf("Monitoring server: %s\n", server_url);
   Serial.println("Checking for updates every 18 seconds");
+  
+  // Cleanup WiFiManager parameters (no longer needed)
+  if (custom_server_host) {
+    delete custom_server_host;
+    custom_server_host = nullptr;
+  }
+  if (custom_server_port) {
+    delete custom_server_port;
+    custom_server_port = nullptr;
+  }
   
   // Clear double reset counter after successful boot
   delay(10000);  // Wait 10 seconds for user to potentially double reset

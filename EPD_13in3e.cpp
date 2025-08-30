@@ -281,6 +281,10 @@ void EPD_13IN3E_Clear(UBYTE color) {
 void EPD_13IN3E_DisplayTextScreen(const char* ssid, uint16_t port, int battery_pct) {
     Serial.println("*** e-Frame with Color Bands + Text ***");
     
+    // Access global server config
+    extern char server_host[48];
+    extern char server_port[8];
+    
     // Line buffer for rendering
     static const int BYTES_PER_LINE_HALF = EPD_13IN3E_WIDTH / 4; // 300 bytes per half line
     uint8_t line[BYTES_PER_LINE_HALF];
@@ -289,6 +293,7 @@ void EPD_13IN3E_DisplayTextScreen(const char* ssid, uint16_t port, int battery_p
     char ip_line[64];
     char wifi_line[64];
     char battery_line[64];
+    char server_line[64];
     char ssid_upper[32];
     
     // Special config mode display (battery_pct == -2)
@@ -307,10 +312,15 @@ void EPD_13IN3E_DisplayTextScreen(const char* ssid, uint16_t port, int battery_p
     
     if (battery_pct != -2) {  // Normal mode (not config)
         if (WiFi.status() == WL_CONNECTED) {
-            snprintf(ip_line, sizeof(ip_line), "IP: %s PORT: %d", WiFi.localIP().toString().c_str(), port);
+            // Show only local IP (no port)
+            snprintf(ip_line, sizeof(ip_line), "IP: %s", WiFi.localIP().toString().c_str());
             
-            // Convert SSID to uppercase
-            strncpy(ssid_upper, ssid, sizeof(ssid_upper) - 1);
+            // Show server host and port
+            snprintf(server_line, sizeof(server_line), "SERVER: %s:%s", server_host, server_port);
+            
+            // Convert actual connected SSID to uppercase
+            String connected_ssid = WiFi.SSID();
+            strncpy(ssid_upper, connected_ssid.c_str(), sizeof(ssid_upper) - 1);
             ssid_upper[sizeof(ssid_upper) - 1] = '\0';
             for (int i = 0; ssid_upper[i]; i++) {
                 ssid_upper[i] = toupper(ssid_upper[i]);
@@ -319,6 +329,7 @@ void EPD_13IN3E_DisplayTextScreen(const char* ssid, uint16_t port, int battery_p
         } else {
             strcpy(ip_line, "NO WIFI CONNECTION");
             strcpy(wifi_line, "OFFLINE MODE");
+            strcpy(server_line, "NO SERVER");
         }
     }
     
@@ -335,12 +346,12 @@ void EPD_13IN3E_DisplayTextScreen(const char* ssid, uint16_t port, int battery_p
         band_texts[4] = "TIMEOUT: 3 MINUTES";       // Info
         band_texts[5] = "DOUBLE RESET TO RETRY";    // Help
     } else {
-        // Normal mode display
+        // Normal mode display with server info
         band_texts[0] = "E-INK FRAME (C) 2025";     // Band 0 (black)
-        band_texts[1] = ip_line;                    // Band 1 (white)
-        band_texts[2] = wifi_line;                  // Band 2 (yellow)
-        band_texts[3] = battery_line;               // Band 3 (red)
-        band_texts[4] = "13.3 INCH COLOR DISPLAY";  // Band 4 (blue)
+        band_texts[1] = wifi_line;                  // Band 1 (white) - Actual WiFi
+        band_texts[2] = ip_line;                    // Band 2 (yellow) - Local IP only
+        band_texts[3] = server_line;                // Band 3 (red) - Server info
+        band_texts[4] = battery_line;               // Band 4 (blue) - Battery
         band_texts[5] = "READY FOR YOUR IMAGES";    // Band 5 (green)
     }
     
