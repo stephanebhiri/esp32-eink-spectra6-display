@@ -237,8 +237,24 @@ void saveWiFiCredentials() {
  */
 bool checkForNewImage() {
   HTTPClient http;
-  char url[128];
-  snprintf(url, sizeof(url), "%s/api/image/info", server_url);
+  
+  // Collect system stats
+  int battery_pct = getBatteryLevel();
+  int rssi = WiFi.RSSI();
+  uint32_t free_heap = ESP.getFreeHeap();
+  uint32_t uptime = millis() / 1000;  // Convert to seconds
+  
+  // Build URL with parameters
+  char url[256];
+  if (battery_pct >= 0) {
+    snprintf(url, sizeof(url), "%s/api/image/info?battery=%d&rssi=%d&heap=%u&uptime=%u", 
+             server_url, battery_pct, rssi, free_heap, uptime);
+  } else {
+    // USB power mode (battery_pct = -1)
+    snprintf(url, sizeof(url), "%s/api/image/info?battery=usb&rssi=%d&heap=%u&uptime=%u", 
+             server_url, rssi, free_heap, uptime);
+  }
+  
   http.begin(url);
   http.setTimeout(5000);
   
