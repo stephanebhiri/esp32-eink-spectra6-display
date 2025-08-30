@@ -34,6 +34,8 @@ static const int BYTES_PER_LINE_HALF = EPD_WIDTH/4;
 
 // Network configuration
 char server_url[64];
+char server_host[48];  // Will be loaded from config or default
+char server_port[8] = "8080";     // Default port
 char last_image_hash[33] = "";  // MD5 = 32 chars + null terminator
 
 // WiFi credential storage
@@ -154,22 +156,39 @@ bool detectDoubleReset() {
 
 
 /**
- * Load WiFi credentials from flash memory
+ * Load WiFi and server configuration from flash memory
  */
-void loadWiFiCredentials() {
-  preferences.begin("wifi", true);
+void loadConfiguration() {
+  preferences.begin("config", true);
   
-  if (preferences.getBool("configured", false)) {
-    stored_ssid = preferences.getString("ssid", "");
-    stored_password = preferences.getString("password", "");
-    wifi_configured = true;
-    Serial.println("Loaded WiFi: " + stored_ssid);
-  } else {
-    Serial.println("No saved WiFi credentials");
-    wifi_configured = false;
+  // Load server settings
+  String saved_host = preferences.getString("server_host", "");
+  String saved_port = preferences.getString("server_port", "");
+  
+  if (saved_host.length() > 0) {
+    strncpy(server_host, saved_host.c_str(), sizeof(server_host) - 1);
+    server_host[sizeof(server_host) - 1] = '\0';
+    Serial.printf("Loaded server host: %s\n", server_host);
+  }
+  
+  if (saved_port.length() > 0) {
+    strncpy(server_port, saved_port.c_str(), sizeof(server_port) - 1);
+    server_port[sizeof(server_port) - 1] = '\0';
+    Serial.printf("Loaded server port: %s\n", server_port);
   }
   
   preferences.end();
+}
+
+/**
+ * Save server configuration to flash memory
+ */
+void saveConfiguration(const char* host, const char* port) {
+  preferences.begin("config", false);
+  preferences.putString("server_host", host);
+  preferences.putString("server_port", port);
+  preferences.end();
+  Serial.println("Server configuration saved");
 }
 
 /**
@@ -345,17 +364,45 @@ void setup() {
   // Initialize hardware
   DEV_Module_Init();
   
-  // Configure server URL
-  snprintf(server_url, sizeof(server_url), "http://%s:%d", VPS_HOST, VPS_PORT);
+  // Load saved configuration or use defaults
+  loadConfiguration();
   
-  // Initialize WiFiManager
+  // If no saved host, use default from WiFiConfig.h
+  if (strlen(server_host) == 0) {
+    strncpy(server_host, VPS_HOST, sizeof(server_host) - 1);
+    server_host[sizeof(server_host) - 1] = '\0';
+  }
+  if (strlen(server_port) == 0) {
+    snprintf(server_port, sizeof(server_port), "%d", VPS_PORT);
+  }
+  
+  // Initialize WiFiManager with custom parameters
   WiFiManager wm;
+  
+  // Create custom parameters for server configuration
+  WiFiManagerParameter custom_server_host("server", "Server Host/IP", server_host, 47);
+  WiFiManagerParameter custom_server_port("port", "Server Port", server_port, 7);
+  WiFiManagerParameter custom_html("<p style='color:#666;font-size:12px;margin-top:20px;'>Configure your image server endpoint above</p>");
+  
+  // Add parameters to WiFiManager
+  wm.addParameter(&custom_server_host);
+  wm.addParameter(&custom_server_port);
+  wm.addParameter(&custom_html);
+  
   wm.setConfigPortalTimeout(180);  // 3 minutes timeout
   wm.setMinimumSignalQuality(20);  // Filter weak networks
   wm.setAPCallback([](WiFiManager *myWiFiManager) {
     Serial.println("Entered config mode");
     Serial.printf("Connect to WiFi network: %s\n", myWiFiManager->getConfigPortalSSID().c_str());
     Serial.println("Then open http://192.168.4.1");
+  });
+  
+  // Callback to save custom parameters
+  wm.setSaveParamsCallback([&custom_server_host, &custom_server_port]() {
+    Serial.println("Saving custom parameters");
+    strncpy(server_host, custom_server_host.getValue(), sizeof(server_host) - 1);
+    strncpy(server_port, custom_server_port.getValue(), sizeof(server_port) - 1);
+    saveConfiguration(server_host, server_port);
   });
   
   // Check for double reset
@@ -438,6 +485,8 @@ void setup() {
   delay(1000);
   EPD_13IN3E_PowerOff();
 
+  // Build server URL from configuration
+  snprintf(server_url, sizeof(server_url), "http://%s:%s", server_host, server_port);
   Serial.printf("Monitoring server: %s\n", server_url);
   Serial.println("Checking for updates every 18 seconds");
   
