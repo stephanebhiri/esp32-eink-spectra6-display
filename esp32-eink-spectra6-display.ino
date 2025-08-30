@@ -34,7 +34,7 @@ static const int BYTES_PER_LINE_HALF = EPD_WIDTH/4;
 
 // Network configuration
 char server_url[64];
-char last_image_hash[32] = "";
+char last_image_hash[33] = "";  // MD5 = 32 chars + null terminator
 
 // WiFi credential storage
 Preferences preferences;
@@ -152,51 +152,6 @@ bool detectDoubleReset() {
   return false;
 }
 
-/**
- * Custom minimal HTML for WiFi configuration portal
- * Ultra-light design optimized for e-ink aesthetic
- */
-const char* customPortalHTML = R"(
-<!DOCTYPE html>
-<html>
-<head>
-<meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>E-Ink Display Setup</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font:16px/1.6 -apple-system,system-ui,sans-serif;background:#fff;padding:20px}
-h1{font-size:24px;font-weight:300;letter-spacing:-1px;margin-bottom:30px;padding-bottom:10px;border-bottom:1px solid #000}
-.m{max-width:400px;margin:0 auto}
-.f{margin-bottom:20px}
-label{display:block;margin-bottom:5px;font-size:12px;text-transform:uppercase;letter-spacing:1px}
-input{width:100%;padding:12px;border:1px solid #000;font-size:16px;transition:all .2s}
-input:focus{outline:none;border-width:2px;padding:11px}
-button{width:100%;padding:15px;background:#000;color:#fff;border:none;font-size:14px;text-transform:uppercase;letter-spacing:2px;cursor:pointer;transition:all .2s}
-button:hover{background:#333}
-.i{text-align:center;margin:30px 0;font-size:14px;color:#666}
-.s{padding:10px;background:#f0f0f0;border-left:3px solid #000;margin:20px 0;font-size:14px}
-</style>
-</head>
-<body>
-<div class='m'>
-<h1>⬛ E-Ink Display</h1>
-<div class='i'>Configure your WiFi network</div>
-<form action='/wifisave' method='post'>
-<div class='f'>
-<label>Network Name</label>
-<input name='s' placeholder='Your WiFi SSID' required>
-</div>
-<div class='f'>
-<label>Password</label>
-<input type='password' name='p' placeholder='Your WiFi password' required>
-</div>
-<button type='submit'>Connect →</button>
-</form>
-<div class='s'>Double-tap reset button anytime to return here</div>
-</div>
-</body>
-</html>
-)";
 
 /**
  * Load WiFi credentials from flash memory
@@ -286,6 +241,7 @@ bool checkForNewImage() {
   }
   
   Serial.printf("Server request failed: HTTP %d\n", response_code);
+  http.end();  // Clean up HTTP connection on error
   return false;
 }
 

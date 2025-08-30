@@ -28,8 +28,8 @@ GPIO18 (MOSI)     →    MOSI
 GPIO33            →    CS_M (Master Chip Select)
 GPIO15            →    CS_S (Slave Chip Select)
 GPIO14            →    DC (Data/Command)
-GPIO27            →    RST (Reset)
-GPIO32            →    BUSY
+GPIO32            →    RST (Reset)
+GPIO27            →    BUSY (Status)
 GPIO21            →    PWR (Power Control, optional)
 BAT               →    VCC (Battery 3.7V LiPo)
 GND               →    GND
